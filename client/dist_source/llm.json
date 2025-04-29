@@ -1,5 +1,5 @@
 {
-    "in_use": "DeepInsight",
+    "in_use": "Azure",
     "OpenAI": {
         "OpenaiApiKey": "",
         "HttpProxyHost": "",
@@ -52,9 +52,10 @@
         ]
     },
     "Azure": {
-        "ApiKey": "",
-        "Model": "",
-        "ApiHost": "",
+        "ApiKey": "dc52866582414b138f63097565573ba3",
+        "Model": "xiaolvgongcheng-ai-openai-westus-gpt-4o-0806",
+        "ApiHost": "https://xiaolvgongcheng-ai-openai-westus.openai.azure.com/",
+        "ApiVersion": "2024-05-01-preview",
         "required": [
             "ApiKey",
             "Model",
