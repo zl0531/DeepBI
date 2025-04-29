@@ -36,3 +36,11 @@ supervisord.conf
 uwsgi.ini
 /ai/test/
 /ai/paper/
+
+# API Key files
+client/app/llm.json
+client/dist_source/llm.json
+backup_config/llm.json
+*.key
+*apikey*
+*api_key*
