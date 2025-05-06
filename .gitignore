@@ -44,3 +44,6 @@ backup_config/llm.json
 *.key
 *apikey*
 *api_key*
+token_*.json
+.env.backup
+run_deepbi.py
