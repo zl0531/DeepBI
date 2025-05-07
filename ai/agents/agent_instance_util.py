@@ -62,15 +62,28 @@ class AgentInstanceUtil:
 
     def set_api_key(self, api_key, ApiType="openai", api_host=None, ApiModel=None, LlmSetting=None):
         self.api_key = api_key
+        # 保存当前使用的LLM名称
+        self.llm_in_use_name = ApiType
+
         if api_host is not None:
             # api_base = "https://api.openai.com/"
             print('api_host: ', api_host)
+            # 确保Azure OpenAI的api_type正确设置为"Azure"
+            if ApiType == "Azure":
+                api_type = "Azure"
+                # 如果没有指定模型，使用默认的gpt-4
+                if ApiModel is None or ApiModel.strip() == "":
+                    ApiModel = "gpt-4"
+                print('Using Azure OpenAI with model:', ApiModel)
+            else:
+                api_type = ApiType
+
             self.config_list_gpt4 = [
                 {
                     'model': ApiModel,
                     'api_key': api_key,
                     'api_base': api_host,
-                    'api_type': ApiType,
+                    'api_type': api_type,
                     'llm_setting': LlmSetting
                 },
             ]
@@ -80,7 +93,7 @@ class AgentInstanceUtil:
                     'model': ApiModel,
                     'api_key': self.api_key,
                     'api_base': api_host,
-                    'api_type': ApiType,
+                    'api_type': api_type,
                     'llm_setting': LlmSetting
                 },
             ]
@@ -90,17 +103,26 @@ class AgentInstanceUtil:
                     'model': 'gpt-3.5-turbo-1106',
                     'api_key': self.api_key,
                     'api_base': api_host,
-                    'api_type': ApiType,
+                    'api_type': api_type,
                     'llm_setting': LlmSetting
                 },
             ]
         else:
+            # 确保Azure OpenAI的api_type正确设置为"Azure"
+            if ApiType == "Azure":
+                api_type = "Azure"
+                # 如果没有指定模型，使用默认的gpt-4
+                if ApiModel is None or ApiModel.strip() == "":
+                    ApiModel = "gpt-4"
+                print('Using Azure OpenAI with model:', ApiModel)
+            else:
+                api_type = ApiType
 
             self.config_list_gpt4 = [
                 {
                     'model': ApiModel,
                     'api_key': api_key,
-                    'api_type': ApiType,
+                    'api_type': api_type,
                     'llm_setting': LlmSetting
                 },
             ]
@@ -109,8 +131,7 @@ class AgentInstanceUtil:
                 {
                     'model': ApiModel,
                     'api_key': self.api_key,
-
-                    'api_type': ApiType,
+                    'api_type': api_type,
                     'llm_setting': LlmSetting
                 },
             ]
@@ -119,7 +140,7 @@ class AgentInstanceUtil:
                 {
                     'model': 'gpt-3.5-turbo-1106',
                     'api_key': self.api_key,
-                    'api_type': ApiType,
+                    'api_type': api_type,
                     'llm_setting': LlmSetting
                 },
             ]
@@ -647,7 +668,8 @@ class AgentInstanceUtil:
         analyst = AssistantAgent(
             name="Analyst",
             system_message='''Analyst. You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.
-                              Reply "TERMINATE" in the end when everything is done.
+
+                  IMPORTANT: Do not add "TERMINATE" at the end of your messages. This will cause issues with the system.
                   ''',
             llm_config=self.gpt4_turbo_config,
             websocket=self.websocket,
@@ -712,6 +734,11 @@ class AgentInstanceUtil:
 
     def get_agent_planner_user(self, is_log_out=True, report_file_name=None):
         """Disposable conversation initiator, no reply"""
+        # Define a custom termination message checker that ignores "TERMINATE" at the end of messages
+        def custom_is_termination_msg(message_dict):
+            # Always return False to never treat any message as a termination message
+            return False
+
         planner_user = UserProxyAgent(
             name="planner_user",
             max_consecutive_auto_reply=0,  # terminate without auto-reply
@@ -720,6 +747,7 @@ class AgentInstanceUtil:
             is_log_out=is_log_out,
             openai_proxy=self.openai_proxy,
             report_file_name=report_file_name,
+            is_termination_msg=custom_is_termination_msg,  # Use our custom termination message checker
         )
         return planner_user
 
@@ -905,7 +933,7 @@ class AgentInstanceUtil:
             human_input_mode="NEVER",
             websocket=self.websocket,
             user_name=self.user_name,
-            default_auto_reply="TERMINATE",
+            default_auto_reply=None,  # Changed from "TERMINATE" to None to prevent unnecessary termination messages
             # outgoing=self.outgoing,
             # incoming=self.incoming,
             db_id=self.db_id,
@@ -928,7 +956,9 @@ class AgentInstanceUtil:
                     If you want the user to save the code in a file before executing it, put # filename: <filename> inside the code block as the first line. Don't include multiple code blocks in one response. Do not ask users to copy and paste the result. Instead, use 'print' function for the output when relevant. Check the execution result returned by the user.
                     If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                     When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                    Reply "TERMINATE" in the end when everything is done.
+
+                    IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
+
                     When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                     It involves data queries that truncate the data if it exceeds 1000 rows, or reduce the number of rows by summing and other means.
                     It involves data queries that truncate the data if it exceeds 1000 rows, or reduce the number of rows by summing and other means.
@@ -960,7 +990,7 @@ class AgentInstanceUtil:
                                           If you need to use %Y-%M to query the date or timestamp, please use %Y-%M. You cannot use %%Y-%%M.(For example you should use SELECT * FROM your_table WHERE DATE_FORMAT(your_date_column, '%Y-%M') = '2024-February'; instead of SELECT * FROM your_table WHERE DATE_FORMAT(your_date_column, '%%Y-%%M') = '2024-%%M';)
                                           If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                           When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                                          Reply "TERMINATE" in the end when everything is done.
+                                          IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                           When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                           Be careful to avoid using mysql special keywords in mysql code.
                                           One SQL query result is limited to 20 items.
@@ -990,7 +1020,7 @@ class AgentInstanceUtil:
                                             If you want the user to save the code in a file before executing it, put # filename: <filename> inside the code block as the first line. Don't include multiple code blocks in one response. Do not ask users to copy and paste the result. Instead, use 'print' function for the output when relevant. Check the execution result returned by the user.
                                             If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                             When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                                            Reply "TERMINATE" in the end when everything is done.
+                                            IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                             When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                             Be careful to avoid using mysql special keywords in mysql code.
                                             One SQL query result is limited to 20 items.
@@ -1020,7 +1050,7 @@ class AgentInstanceUtil:
                                             If you want the user to save the code in a file before executing it, put # filename: <filename> inside the code block as the first line. Don't include multiple code blocks in one response. Do not ask users to copy and paste the result. Instead, use 'print' function for the output when relevant. Check the execution result returned by the user.
                                             If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                             When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                                            Reply "TERMINATE" in the end when everything is done.
+                                            IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                             When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                             """ + '\n' + self.base_postgresql_info + '\n' + python_base_dependency + '\n' + POSTGRESQL_ECHART_TIPS_MESS,
             human_input_mode="NEVER",
@@ -1047,7 +1077,7 @@ class AgentInstanceUtil:
                                              If you want the user to save the code in a file before executing it, put # filename: <filename> inside the code block as the first line. Don't include multiple code blocks in one response. Do not ask users to copy and paste the result. Instead, use 'print' function for the output when relevant. Check the execution result returned by the user.
                                              If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                              When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                                             Reply "TERMINATE" in the end when everything is done.
+                                             IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                              When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                              Don't generate html files.
                                              """ + '\n' + self.base_starrocks_info + '\n' + python_base_dependency + '\n' + MYSQL_ECHART_TIPS_MESS,
@@ -1077,7 +1107,7 @@ class AgentInstanceUtil:
                                              If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                              When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
                                              The database name needs to be replaced in the database connection string
-                                             Reply "TERMINATE" in the end when everything is done.
+                                             IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                              When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                              """ + '\n' + self.base_mongodb_info + '\n' + python_base_dependency + '\n' + MONGODB_ECHART_TIPS_MESS,
             human_input_mode="NEVER",
@@ -1105,7 +1135,7 @@ class AgentInstanceUtil:
                                     If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                     When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
                                     The database name needs to be replaced with the actual database name in the database connection string, "your_dbname" in the database connection string  "mongodb://your_host:your_port/your_dbname"  must be replaced with the actual database name: q
-                                    Reply "TERMINATE" in the end when everything is done.
+                                    IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                     When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                     """ + '\n' + self.base_mysql_info + '\n' + python_base_dependency + '\n' + MYSQL_MATPLOTLIB_TIPS_MESS,
             human_input_mode="NEVER",
@@ -1130,7 +1160,7 @@ class AgentInstanceUtil:
                                     If you want the user to save the code in a file before executing it, put # filename: <filename> inside the code block as the first line. Don't include multiple code blocks in one response. Do not ask users to copy and paste the result. Instead, use 'print' function for the output when relevant. Check the execution result returned by the user.
                                     If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                                     When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                                    Reply "TERMINATE" in the end when everything is done.
+                                    IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                     When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                                     """ + '\n' + self.base_mysql_info + '\n' + python_base_dependency + '\n' + MYSQL_MATPLOTLIB_TIPS_MESS,
             human_input_mode="NEVER",
@@ -1703,6 +1733,7 @@ class AgentInstanceUtil:
                             answer_message = planner_user.last_message()["content"]
                             # answer_message = planner_user.chat_messages[-1]["content"]
                             print("answer_message: ", answer_message)
+                            answer_message = answer_message.replace("TERMINATE", "")
                             return answer_message
 
                         except Exception as e:
@@ -1888,6 +1919,7 @@ class AgentInstanceUtil:
                     answer_message = planner_user.last_message()["content"]
                     # answer_message = planner_user.chat_messages[-1]["content"]
                     print("answer_message: ", answer_message)
+                    answer_message = answer_message.replace("TERMINATE", "")
                     return answer_message
 
                 except Exception as e:
