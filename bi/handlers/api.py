@@ -97,6 +97,9 @@ from bi.handlers.data_sources_file import (
 from bi.handlers.ai_token_resource import (
     AiTokenResource
 )
+from bi.handlers.websocket_config_resource import (
+    WebSocketConfigResource
+)
 from bi.handlers.data_report_file import (
     DataReportFileResource,
 )
@@ -391,4 +394,11 @@ api.add_org_resource(
     AiTokenResource,
     "/api/ai_token",
     endpoint="ai_token"
+)
+
+# define WebSocket Config op
+api.add_org_resource(
+    WebSocketConfigResource,
+    "/api/websocket_config",
+    endpoint="websocket_config"
 )

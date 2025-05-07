@@ -270,11 +270,18 @@ class AIDB:
     async def check_api_key(self, is_auto_pilot=False):
         # self.agent_instance_util.api_key_use = True
 
-        # .token_[uid].json
-        token_path = CONFIG.up_file_path + '.token_' + str(self.uid) + '.json'
-        if os.path.exists(token_path):
+        # Import TokenManager here to avoid circular imports
+        from ai.backend.aidb.token_manager import TokenManager
+
+        # Get token data using TokenManager
+        token_data = TokenManager.get_token_data(self.uid)
+
+        if token_data:
             try:
-                ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, LlmSetting = self.load_api_key(token_path)
+                # Load API key from token data
+                token_path = CONFIG.up_file_path + '.token_' + str(self.uid) + '.json'
+                ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, LlmSetting = self.load_api_key_from_data(token_data)
+
                 if ApiKey is None or len(ApiKey) == 0:
                     if not is_auto_pilot:
                         await self.put_message(500, CONFIG.talker_log, CONFIG.type_log_data, self.error_miss_key)
@@ -319,12 +326,17 @@ class AIDB:
     async def test_api_key(self):
         # self.agent_instance_util.api_key_use = True
 
-        # .token_[uid].json
-        token_path = CONFIG.up_file_path + '.token_' + str(self.uid) + '.json'
-        print('token_path : ', token_path)
-        if os.path.exists(token_path):
+        # Import TokenManager here to avoid circular imports
+        from ai.backend.aidb.token_manager import TokenManager
+
+        # Get token data using TokenManager
+        token_data = TokenManager.get_token_data(self.uid)
+
+        if token_data:
             try:
-                ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, LlmSetting = self.load_api_key(token_path)
+                # Load API key from token data
+                ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, LlmSetting = self.load_api_key_from_data(token_data)
+
                 if ApiKey is None or len(ApiKey) == 0:
                     return await self.put_message(200, CONFIG.talker_api, CONFIG.type_test, LanguageInfo.no_api_key)
 
@@ -361,28 +373,38 @@ class AIDB:
         else:
             return await self.put_message(200, CONFIG.talker_api, CONFIG.type_test, LanguageInfo.no_api_key)
 
-    def load_api_key(self, token_path):
+    def load_api_key_from_data(self, data):
+        """
+        Load API key from token data dictionary
+
+        Args:
+            data (dict): Token data dictionary
+
+        Returns:
+            tuple: (ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, LlmSetting)
+        """
         ApiKey = None
         HttpProxyHost = None
         HttpProxyPort = None
         ApiHost = None
         ApiType = None
-        try:
-            with open(token_path, 'r') as file:
-                data = json.load(file)
-        except:
-            raise Exception("load_api_key error")
+        ApiModel = None
 
         if data.get('in_use'):
             in_use = ApiType = data.get('in_use')
             ApiModel = data[in_use]['Model'] if in_use in data and 'Model' in data[in_use] else None
             if in_use == 'OpenAI':
                 ApiKey = data[in_use]['OpenaiApiKey']
-                HttpProxyHost = data[in_use]['HttpProxyHost']
-                HttpProxyPort = data[in_use]['HttpProxyPort']
-                openaiApiHost = data[in_use]['ApiHost']
+                HttpProxyHost = data[in_use].get('HttpProxyHost', '')
+                HttpProxyPort = data[in_use].get('HttpProxyPort', '')
+                openaiApiHost = data[in_use].get('ApiHost', '')
                 if openaiApiHost is not None and len(str(openaiApiHost)) > 0:
                     ApiHost = openaiApiHost
+                if ApiModel is None or "" == ApiModel.strip():
+                    ApiModel = "gpt-4o"
+            elif in_use == 'Azure':
+                ApiKey = data[in_use]['ApiKey']
+                ApiHost = data[in_use]['ApiHost']
                 if ApiModel is None or "" == ApiModel.strip():
                     ApiModel = "gpt-4o"
             elif "DeepInsight" == in_use:
@@ -392,34 +414,31 @@ class AIDB:
                     ApiModel = "gpt-4o"
                 # Other default models are configured through the client
                 ApiHost = CONFIG.ApiHost
-            elif "AliBaiLian" == in_use:
-                ApiKey = data[in_use]['ApiKey']
-            elif "BaiduQianFan" == in_use:
-                ApiKey = data[in_use]['ApiKey']
-            elif "ZhiPuAI" == in_use:
-                ApiKey = data[in_use]['ApiKey']
-                ApiHost = data[in_use]['ApiHost']
-            elif "AWSClaude" == in_use:
-                ApiKey = data[in_use]['ApiKey']
-                ApiHost = data[in_use]['ApiHost']
-            elif "Deepseek" == in_use:
-                ApiKey = data[in_use]['ApiKey']
-                ApiHost = data[in_use]['ApiHost']
-            elif "Azure" == in_use:
-                ApiKey = data[in_use]['ApiKey']
-                ApiHost = data[in_use]['ApiHost']
-            else:
-                raise Exception("No in_use llm in token_[uid].json")
-        else:
-            # 这里是默认的 openai 所有配置都有问题
-            ApiKey = data['OpenaiApiKey']
-            HttpProxyHost = data['HttpProxyHost']
-            HttpProxyPort = data['HttpProxyPort']
-            ApiType = "openai"
-            ApiModel = data[in_use]['Model'] if in_use in data and 'Model' in data[in_use] else None
+
         # all llm config
-        del data['in_use']
-        return ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, data
+        if 'in_use' in data:
+            data_copy = data.copy()
+            del data_copy['in_use']
+            return ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, data_copy
+        else:
+            return ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, data
+
+    def load_api_key(self, token_path):
+        """
+        Load API key from token file
+
+        Args:
+            token_path (str): Path to token file
+
+        Returns:
+            tuple: (ApiKey, HttpProxyHost, HttpProxyPort, ApiHost, ApiType, ApiModel, LlmSetting)
+        """
+        try:
+            with open(token_path, 'r') as file:
+                data = json.load(file)
+            return self.load_api_key_from_data(data)
+        except Exception as e:
+            raise Exception(f"load_api_key error: {str(e)}")
 
     def generate_error_message(self, http_err, error_message=' API ERROR '):
         # print(f'HTTP error occurred: {http_err}')

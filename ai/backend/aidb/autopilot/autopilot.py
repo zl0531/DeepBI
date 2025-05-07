@@ -35,8 +35,6 @@ class Autopilot(AIDB):
                        Task types are generally divided into the following categories:
                        - Report generation task: query data, and finally display the data in the form of charts.
                        - base tasks: analyze existing data and draw conclusions about the given problem.
-
-                   Reply "TERMINATE" in the end when everything is done.
                         """ + '\n' + self.agent_instance_util.base_mysql_info,
             human_input_mode="NEVER",
             user_name=self.user_name,
@@ -109,7 +107,6 @@ class Autopilot(AIDB):
          {},
          {},
          ].
-         Reply "TERMINATE" in the end when everything is done.
              """,
             llm_config=self.agent_instance_util.gpt4_turbo_config,
             websocket=self.websocket,
@@ -122,7 +119,6 @@ class Autopilot(AIDB):
         analyst = AssistantAgent(
             name="Analyst",
             system_message='''Analyst. You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.
-                                 Reply "TERMINATE" in the end when everything is done.
         The output should be formatted as a JSON instance that conforms to the JSON schema below, the JSON is a list of dict,
         [
         {“analysis_item”: “analysis”, “description”:”description of the analysis”;},

@@ -1052,6 +1052,11 @@ class AgentInstanceUtil:
                                             When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
                                             IMPORTANT: DO NOT add "TERMINATE" at the end of your messages. This will cause issues with the system.
                                             When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
+
+                                            IMPORTANT: When writing SQL queries, always use the exact values from the database.
+                                            Do not translate column values or use abbreviations. For example, if a column contains values
+                                            like 'Battery Electric Vehicle (BEV)', use that exact string in your queries, not translations
+                                            like '电池电动汽车（BEV）' or abbreviations like 'BEV'.
                                             """ + '\n' + self.base_postgresql_info + '\n' + python_base_dependency + '\n' + POSTGRESQL_ECHART_TIPS_MESS,
             human_input_mode="NEVER",
             user_name=self.user_name,

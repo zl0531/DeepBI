@@ -144,17 +144,29 @@ class AnalysisCsv(Analysis):
                     csv_echart_assistant = self.agent_instance_util.get_agent_csv_echart_assistant(use_cache)
                     python_executor = self.agent_instance_util.get_agent_python_executor()
 
+                    # 修改 python_executor 的 is_termination_msg 函数，使其不会将 "TERMINATE" 视为终止消息
+                    def custom_is_termination_msg(message_dict):
+                        # 始终返回 False，不将任何消息视为终止消息
+                        return False
+
+                    # 保存原始的 is_termination_msg 函数
+                    original_executor_is_termination_msg = python_executor._is_termination_msg
+                    python_executor._is_termination_msg = custom_is_termination_msg
+
                     await python_executor.initiate_chat(
                         csv_echart_assistant,
                         message=self.agent_instance_util.base_message + '\n' + self.question_ask + '\n' + str(
                             qustion_message),
                     )
 
+                    # 恢复原始的 is_termination_msg 函数
+                    python_executor._is_termination_msg = original_executor_is_termination_msg
+
                     answer_message = csv_echart_assistant.chat_messages[python_executor]
 
                     for answer_mess in answer_message:
                         # print("answer_mess :", answer_mess)
-                        if answer_mess['content']:
+                        if answer_mess.get('content'):
                             if str(answer_mess['content']).__contains__('execution succeeded'):
 
                                 answer_mess_content = str(answer_mess['content']).replace('\n', '')
@@ -172,30 +184,29 @@ class AnalysisCsv(Analysis):
                                 chart_code_str = str(json_str).replace("\n", "")
                                 if len(chart_code_str) > 0:
                                     print("chart_code_str: ", chart_code_str)
-                                    if base_util.is_json(chart_code_str):
-                                        report_demand_list = json.loads(chart_code_str)
-                                        print("report_demand_list: ", report_demand_list)
+                                    try:
+                                        if base_util.is_json(chart_code_str):
+                                            report_demand_list = json.loads(chart_code_str)
+                                            print("report_demand_list: ", report_demand_list)
 
-                                        for jstr in report_demand_list:
-                                            if str(jstr).__contains__('echart_name') and str(jstr).__contains__(
-                                                'echart_code'):
-                                                base_content.append(jstr)
-                                    else:
-                                        report_demand_list = ast.literal_eval(chart_code_str)
-                                        print("report_demand_list: ", report_demand_list)
-                                        for jstr in report_demand_list:
-                                            if str(jstr).__contains__('echart_name') and str(jstr).__contains__(
-                                                'echart_code'):
-                                                base_content.append(jstr)
+                                            for jstr in report_demand_list:
+                                                if isinstance(jstr, dict) and 'echart_name' in jstr and 'echart_code' in jstr:
+                                                    base_content.append(jstr)
+                                        else:
+                                            report_demand_list = ast.literal_eval(chart_code_str)
+                                            print("report_demand_list: ", report_demand_list)
+                                            for jstr in report_demand_list:
+                                                if isinstance(jstr, dict) and 'echart_name' in jstr and 'echart_code' in jstr:
+                                                    base_content.append(jstr)
+                                    except Exception as e:
+                                        traceback.print_exc()
+                                        logger.error("from user:[{}".format(self.user_name) + "] , " + "Error parsing chart data: " + str(e))
 
                     print("base_content: ", base_content)
                     base_mess = []
                     base_mess.append(answer_message)
                     break
 
-                    # if len(base_content) > 0:
-                    # base_mess.append(answer_mess)
-                    # break
                 except Exception as e:
                     traceback.print_exc()
                     logger.error("from user:[{}".format(self.user_name) + "] , " + "error: " + str(e))
@@ -212,20 +223,22 @@ class AnalysisCsv(Analysis):
             is_chart = False
             # 调用接口生成图片
             for img_str in base_content:
+                if not isinstance(img_str, dict):
+                    continue
+
                 echart_name = img_str.get('echart_name')
                 echart_code = img_str.get('echart_code')
 
-                if len(echart_code) > 0 and str(echart_code).__contains__('x'):
+                if echart_code and len(echart_code) > 0 and str(echart_code).__contains__('x'):
                     is_chart = True
                     print("echart_name : ", echart_name)
-                    # 格式化echart_code
-                    # if base_util.is_json(str(echart_code)):
-                    #     json_obj = json.loads(str(echart_code))
-                    #     echart_code = json.dumps(json_obj)
 
-
-                    re_str = await bi_proxy.run_echart_code(str(echart_code), echart_name)
-                    base_mess.append(re_str)
+                    try:
+                        re_str = await bi_proxy.run_echart_code(str(echart_code), echart_name)
+                        base_mess.append(re_str)
+                    except Exception as e:
+                        traceback.print_exc()
+                        logger.error("from user:[{}".format(self.user_name) + "] , " + "Error running echart code: " + str(e))
 
             error_times = 0  # 失败次数
             for i in range(max_retry_times):
@@ -233,28 +246,77 @@ class AnalysisCsv(Analysis):
                     planner_user = self.agent_instance_util.get_agent_planner_user()
                     analyst = self.agent_instance_util.get_agent_analyst()
 
-                    question_supplement = 'Please make an analysis and summary in English, including which charts were generated, and briefly introduce the contents of these charts.'
+                    question_supplement = 'Please make an analysis and summary in English, including which charts were generated, and briefly introduce the contents of these charts. IMPORTANT: Do not add "TERMINATE" at the end of your message.'
                     if self.language_mode == language_chinese:
-                        # question_supplement = " 请用中文做一下分析总结，内容包括哪些图表生成了，简单介绍一下这些图表的内容。"
                         if is_chart:
-                            question_supplement = " 请用中文，简单介绍一下已生成图表中的数据内容."
+                            question_supplement = ' 请用中文，简单介绍一下已生成图表中的数据内容. 重要提示：请不要在消息末尾添加"TERMINATE"。'
                         else:
-                            question_supplement = " 请用中文，从上诉对话中分析总结出问题的答案."
+                            question_supplement = ' 请用中文，从上诉对话中分析总结出问题的答案. 重要提示：请不要在消息末尾添加"TERMINATE"。'
                     elif self.language_mode == CONFIG.language_japanese:
                         if is_chart:
-                            question_supplement = " 生成されたグラフのデータ内容について、簡単に日本語で説明してください。"
+                            question_supplement = ' 生成されたグラフのデータ内容について、簡単に日本語で説明してください。重要：メッセージの最後に「TERMINATE」を追加しないでください。'
                         else:
-                            question_supplement = " 上記の対話から問題の答えを分析し、日本語で要約してください。"
+                            question_supplement = ' 上記の対話から問題の答えを分析し、日本語で要約してください。重要：メッセージの最後に「TERMINATE」を追加しないでください。'
 
                     # 1,开始分析
-                    await planner_user.initiate_chat(
-                        analyst,
-                        message=str(base_mess) + '\n' + str(
-                            qustion_message) + '\n' + self.question_ask + '\n' + question_supplement,
-                    )
+                    # 构建发送给 Analyst 的消息
+                    message_to_analyst = str(base_mess) + '\n' + str(qustion_message) + '\n' + self.question_ask + '\n' + question_supplement
 
-                    answer_message = planner_user.last_message()["content"]
+                    # 使用现有的 analyst 实例，不尝试修改其系统消息
+                    # 直接使用 agent_instance_util 中已经配置好的 analyst
+                    analyst = self.agent_instance_util.get_agent_analyst()
+
+                    # 设置 human_input_mode 为 "NEVER"
+                    planner_user.human_input_mode = "NEVER"
+
+                    # 设置自定义的 is_termination_msg 函数
+                    def custom_is_termination_msg(message_dict):
+                        return False
+
+                    # 保存原始的 is_termination_msg 函数
+                    original_analyst_is_termination_msg = analyst._is_termination_msg
+                    original_planner_is_termination_msg = planner_user._is_termination_msg
+
+                    # 临时设置 is_termination_msg 函数
+                    analyst._is_termination_msg = custom_is_termination_msg
+                    planner_user._is_termination_msg = custom_is_termination_msg
+
+                    try:
+                        # 在消息中添加提示，而不是修改系统消息
+                        message_with_warning = message_to_analyst + "\n\nIMPORTANT: Do not add 'TERMINATE' at the end of your messages. This will cause issues with the system."
+
+                        # 发送消息并获取回复
+                        await planner_user.send(message_with_warning, analyst, request_reply=True)
+
+                        # 获取回复消息
+                        # 检查是否有 last_message 方法
+                        if hasattr(planner_user, 'last_message') and callable(getattr(planner_user, 'last_message')):
+                            last_message = planner_user.last_message(analyst)
+                        else:
+                            # 如果没有 last_message 方法，尝试从 chat_messages 获取
+                            if hasattr(planner_user, 'chat_messages') and analyst in planner_user.chat_messages:
+                                messages = planner_user.chat_messages[analyst]
+                                last_message = messages[-1] if messages else None
+                            else:
+                                last_message = None
+                    finally:
+                        # 恢复原始的 is_termination_msg 函数
+                        analyst._is_termination_msg = original_analyst_is_termination_msg
+                        planner_user._is_termination_msg = original_planner_is_termination_msg
+
+                    # 提取回复内容
+                    if last_message is not None:
+                        if isinstance(last_message, dict) and "content" in last_message:
+                            answer_message = last_message["content"]
+                        else:
+                            answer_message = str(last_message)
+                    else:
+                        # 如果无法获取回复，返回一个默认消息
+                        answer_message = "无法获取分析结果，请查看图表数据。"
+
                     print("answer_message: ", answer_message)
+                    # 移除 "TERMINATE"
+                    answer_message = answer_message.replace("TERMINATE", "")
                     return answer_message
 
                 except Exception as e:
@@ -263,7 +325,6 @@ class AnalysisCsv(Analysis):
                     error_times = error_times + 1
 
             if error_times == max_retry_times:
-                # return "十分抱歉，本次AI-GPT接口调用超时，请再次重试"
                 return self.error_message_timeout
 
             if self.language_mode == language_chinese:
@@ -294,21 +355,36 @@ class AnalysisCsv(Analysis):
                     base_mysql_assistant = self.get_agent_base_csv_assistant()
                     python_executor = self.agent_instance_util.get_agent_python_executor()
 
+                    # 修改 python_executor 的 is_termination_msg 函数，使其不会将 "TERMINATE" 视为终止消息
+                    def custom_is_termination_msg(message_dict):
+                        # 始终返回 False，不将任何消息视为终止消息
+                        return False
+
+                    # 保存原始的 is_termination_msg 函数
+                    original_executor_is_termination_msg = python_executor._is_termination_msg
+                    python_executor._is_termination_msg = custom_is_termination_msg
+
                     await python_executor.initiate_chat(
                         base_mysql_assistant,
                         message=self.agent_instance_util.base_message + '\n' + self.question_ask + '\n' + str(
                             qustion_message),
                     )
 
+                    # 恢复原始的 is_termination_msg 函数
+                    python_executor._is_termination_msg = original_executor_is_termination_msg
+
                     answer_message = python_executor.chat_messages[base_mysql_assistant]
                     print("answer_message: ", answer_message)
 
-                    for i in range(len(answer_message)):
-                        answer_mess = answer_message[len(answer_message) - 1 - i]
+                    for j in range(len(answer_message)):
+                        answer_mess = answer_message[len(answer_message) - 1 - j]
                         # print("answer_mess :", answer_mess)
-                        if answer_mess['content'] and answer_mess['content'] != 'TERMINATE':
-                            print("answer_mess['content'] ", answer_mess['content'])
-                            return answer_mess['content']
+                        if answer_mess.get('content'):
+                            # 移除 "TERMINATE" 并返回内容
+                            content = answer_mess['content'].replace("TERMINATE", "").strip()
+                            if content:
+                                print("answer_mess['content'] ", content)
+                                return content
 
                 except Exception as e:
                     traceback.print_exc()
@@ -338,8 +414,8 @@ class AnalysisCsv(Analysis):
                        If you want the user to save the code in a file before executing it, put # filename: <filename> inside the code block as the first line. Don't include multiple code blocks in one response. Do not ask users to copy and paste the result. Instead, use 'print' function for the output when relevant. Check the execution result returned by the user.
                        If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                        When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
-                       Reply "TERMINATE" in the end when everything is done.
-                       When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
+                       IMPORTANT: Do not add "TERMINATE" at the end of your messages. This will cause issues with the system.
+                       When you find an answer, you are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions. Include your analysis in your reply.
 
                        The only source data you need to process is csv files.
                        """ + '\n' + self.agent_instance_util.base_csv_info + '\n' + CONFIG.python_base_dependency + '\n' + self.agent_instance_util.quesion_answer_language,

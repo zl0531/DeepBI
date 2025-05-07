@@ -50,7 +50,15 @@ const SettingsOpenKey = () => {
       // console.log("error", error)
       toast.error(error.message);
     }
-    createWebSocket();
+
+    // Initialize WebSocket connection
+    try {
+      await createWebSocket();
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      toast.error('Failed to establish WebSocket connection');
+    }
+
     setDisabled(false);
   }, [form]);
 
@@ -74,26 +82,36 @@ const SettingsOpenKey = () => {
           acc[key] = rest; // 只保留剩余的字段
           return acc;
         }, {});
+
+        // Close existing WebSocket connection before making changes
+        closeWebSocket();
+
         const response = await axios.post("/api/ai_token", {
           in_use: aiOption,
           ...optionsWithoutRequired,
         });
+
+        // Wait for the API to process the changes
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         if (response.code === 200) {
           if (callback) {
-            callback(values);
+            // Refresh the API key data before calling the callback
+            await getOpenKey();
+            await callback(values);
             return;
           }
           toast.success(window.W_L.save_success);
-          getOpenKey();
+          await getOpenKey();
         } else {
           toast.error(window.W_L.save_failed);
+          setDisabled(false);
         }
       } catch (error) {
-        console.log("error22", error)
+        console.error("API key update error:", error);
         toast.error(window.W_L.save_failed);
+        setDisabled(false);
       }
-      closeWebSocket();
-      setDisabled(false);
     },
     [aiOption, aiOptions, getOpenKey]
   );
@@ -134,14 +152,28 @@ const SettingsOpenKey = () => {
       setDisabled(false);
     }
   };
-  const connectTest = values => {
+  const connectTest = async values => {
     if (!websocket) {
-      createWebSocket();
-      return;
+      try {
+        await createWebSocket();
+        // Wait a moment for the WebSocket to establish connection
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (!websocket || websocket.readyState !== 1) {
+          toast.error('Failed to establish WebSocket connection');
+          setDisabled(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to create WebSocket connection:', error);
+        toast.error('Failed to establish WebSocket connection');
+        setDisabled(false);
+        return;
+      }
     }
-    handleMessage();
 
+    handleMessage();
     setDisabled(true);
+
     let sendInfo = {
       state: 200,
       receiver: "sender",
@@ -152,12 +184,16 @@ const SettingsOpenKey = () => {
         language_mode: window.W_L.language_mode,
       },
     };
+
     websocket.send(JSON.stringify(sendInfo));
   };
 
   const handleConnectTestClick = () => {
-    form.validateFields().then(values => {
-      handleOpenKey(values, connectTest);
+    form.validateFields().then(async values => {
+      await handleOpenKey(values, connectTest);
+    }).catch(error => {
+      console.error('Form validation failed:', error);
+      toast.error('Please fill in all required fields');
     });
   };
 

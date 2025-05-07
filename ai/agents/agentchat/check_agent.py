@@ -7,7 +7,6 @@ import asyncio
 
 class CheckAgent(ConversableAgent):
     DEFAULT_SYSTEM_MESSAGE = """You are a helpful AI assistant.
-Reply "TERMINATE" in the end when everything is done.
     """
 
     def __init__(

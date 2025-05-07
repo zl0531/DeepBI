@@ -36,6 +36,9 @@ services:
       - "8340:8340"
     environment:
       <<: *deepbi-environment
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
+      AZURE_OPENAI_API_BASE: ${AZURE_OPENAI_API_BASE}
+      AZURE_DEPLOYMENT: ${AZURE_DEPLOYMENT}
   server_socket:
     <<: *deepbi-service
     command: server_socket
@@ -45,6 +48,7 @@ services:
       - "8339:8339"
     environment:
       <<: *deepbi-environment
+      OPENAI_API_KEY: "1XRCLPPFpmxTgoSdb38XZ0vXs38UmxsK3UovqRGN"
   scheduler:
     <<: *deepbi-service
     command: scheduler

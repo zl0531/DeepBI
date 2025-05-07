@@ -1,53 +1,61 @@
 // import notification from "@/services/notification";
 import { currentUser } from "@/services/auth";
 import { EventEmitter } from 'events';
+import { getWebSocketUrl } from "@/services/websocketConfig";
 
 let websocket,
   lockReconnect = false,
-  wsType =0,
-  stopGeneration=true;
+  wsType = 0,
+  stopGeneration = true;
 const lockReconnectEvent = new EventEmitter();
-let wsProtocol = 'ws';
-if (window.location.protocol === 'https:') {
-  wsProtocol = 'wss';
-}
-let createWebSocket = () => {
+
+let createWebSocket = async () => {
   if (websocket && websocket.readyState === 1) return;
-  const url = `${wsProtocol}://${process.env.SOCKET}${currentUser.id}_${currentUser.name}`
-  websocket = new WebSocket(url);
-  websocket.onopen = function () {
-    heartCheck.reset().start();
-    // notification.success(window.W_L.connection_success_tip)
-    lockReconnect = true;
-    stopGeneration=false;
-    wsType=1;
-    lockReconnectEvent.emit('change',wsType );
-  };
-  websocket.onerror = function (e) {
-    reconnect(url);
-  };
-  websocket.onclose = function (e) {
+
+  try {
+    // Get WebSocket URL from the config service
+    const url = await getWebSocketUrl(currentUser);
+
+    websocket = new WebSocket(url);
+    websocket.onopen = function () {
+      heartCheck.reset().start();
+      // notification.success(window.W_L.connection_success_tip)
+      lockReconnect = true;
+      stopGeneration = false;
+      wsType = 1;
+      lockReconnectEvent.emit('change', wsType);
+    };
+    websocket.onerror = function (e) {
+      reconnect(url);
+    };
+    websocket.onclose = function (e) {
+      lockReconnect = false;
+      wsType = 0;
+      lockReconnectEvent.emit('change', wsType);
+    };
+    websocket.onmessage = function (event) {
+      lockReconnect = true;
+      wsType = 1;
+      lockReconnectEvent.emit('change', wsType);
+    };
+  } catch (error) {
+    console.error('Failed to create WebSocket connection:', error);
     lockReconnect = false;
-    wsType=0;
+    wsType = 0;
     lockReconnectEvent.emit('change', wsType);
-  };
-  websocket.onmessage = function (event) {
-    lockReconnect = true; 
-    wsType=1;
-    lockReconnectEvent.emit('change', wsType);
-  };
+  }
 };
 let reconnect = (url) => {
   if (lockReconnect) return;
-  setTimeout(function () {
-    createWebSocket(url);
+  setTimeout(async function () {
+    await createWebSocket();
     lockReconnect = false;
-    wsType=2;
+    wsType = 2;
     lockReconnectEvent.emit('change', wsType);
   }, 4000);
 };
 let heartCheck = {
-  timeout: 60000, 
+  timeout: 60000,
   timeoutObj: null,
   reset: function () {
     clearInterval(this.timeoutObj);

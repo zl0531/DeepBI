@@ -107,21 +107,36 @@ class AnalysisMysql(Analysis):
                     base_mysql_assistant = self.get_agent_base_mysql_assistant()
                     python_executor = self.agent_instance_util.get_agent_python_executor()
 
+                    # 修改 python_executor 的 is_termination_msg 函数，使其不会将 "TERMINATE" 视为终止消息
+                    def custom_is_termination_msg(message_dict):
+                        # 始终返回 False，不将任何消息视为终止消息
+                        return False
+
+                    # 保存原始的 is_termination_msg 函数
+                    original_executor_is_termination_msg = python_executor._is_termination_msg
+                    python_executor._is_termination_msg = custom_is_termination_msg
+
                     await python_executor.initiate_chat(
                         base_mysql_assistant,
                         message=self.agent_instance_util.base_message + '\n' + self.question_ask + '\n' + str(
                             qustion_message),
                     )
 
+                    # 恢复原始的 is_termination_msg 函数
+                    python_executor._is_termination_msg = original_executor_is_termination_msg
+
                     answer_message = python_executor.chat_messages[base_mysql_assistant]
                     print("answer_message: ", answer_message)
 
-                    for i in range(len(answer_message)):
-                        answer_mess = answer_message[len(answer_message) - 1 - i]
+                    for j in range(len(answer_message)):
+                        answer_mess = answer_message[len(answer_message) - 1 - j]
                         # print("answer_mess :", answer_mess)
-                        if answer_mess['content'] and answer_mess['content'] != 'TERMINATE':
-                            print("answer_mess['content'] ", answer_mess['content'])
-                            return answer_mess['content']
+                        if answer_mess.get('content'):
+                            # 移除 "TERMINATE" 并返回内容
+                            content = answer_mess['content'].replace("TERMINATE", "").strip()
+                            if content:
+                                print("answer_mess['content'] ", content)
+                                return content
 
                 except Exception as e:
                     traceback.print_exc()
@@ -152,7 +167,7 @@ class AnalysisMysql(Analysis):
                   If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
                   When you find an answer, verify the answer carefully. Include verifiable evidence in your response if possible.
                   In any case (even if I ask you to output an html file), please output the results directly and do not save them to a file.
-                  Reply "TERMINATE" in the end when everything is done.
+                  IMPORTANT: Do not add "TERMINATE" at the end of your messages. This will cause issues with the system.
                   When you find an answer,  You are a report analysis, you have the knowledge and skills to turn raw data into information and insight, which can be used to make business decisions.include your analysis in your reply.
                   Be careful to avoid using mysql special keywords in mysql code.
                   """ + '\n' + self.agent_instance_util.base_mysql_info + '\n' + CONFIG.python_base_dependency + '\n' + self.agent_instance_util.quesion_answer_language,
@@ -180,15 +195,32 @@ class AnalysisMysql(Analysis):
                         use_cache=use_cache)
                     python_executor = self.agent_instance_util.get_agent_python_executor()
 
+                    # 修改 python_executor 的 is_termination_msg 函数，使其不会将 "TERMINATE" 视为终止消息
+                    def custom_is_termination_msg(message_dict):
+                        # 始终返回 False，不将任何消息视为终止消息
+                        return False
+
+                    # 保存原始的 is_termination_msg 函数
+                    original_executor_is_termination_msg = python_executor._is_termination_msg
+                    python_executor._is_termination_msg = custom_is_termination_msg
+
                     await python_executor.initiate_chat(
                         mysql_echart_assistant,
                         message=self.agent_instance_util.base_message + '\n' + self.question_ask + '\n' + str(
                             qustion_message),
                     )
 
+                    # 恢复原始的 is_termination_msg 函数
+                    python_executor._is_termination_msg = original_executor_is_termination_msg
+
                     answer_message = mysql_echart_assistant.chat_messages[python_executor]
+                    # 保存完整的对话历史，而不仅仅是最后一条消息
                     base_mess = []
-                    base_mess.append(answer_message)
+                    # 保存所有的对话消息，包括问题和回答
+                    message_to_assistant = self.agent_instance_util.base_message + '\n' + self.question_ask + '\n' + str(qustion_message)
+                    base_mess.append({"role": "user", "content": message_to_assistant})
+                    for msg in answer_message:
+                        base_mess.append(msg)
                     if str(answer_message).__contains__('图像已生成'):
                         is_chart=True
                     else:
@@ -211,26 +243,72 @@ class AnalysisMysql(Analysis):
                     planner_user = self.agent_instance_util.get_agent_planner_user()
                     analyst = self.agent_instance_util.get_agent_analyst()
 
-                    question_supplement = 'Please make an analysis and summary in English, including which charts were generated, and briefly introduce the contents of these charts.'
+                    question_supplement = 'Please make an analysis and summary in English, including which charts were generated, and briefly introduce the contents of these charts. IMPORTANT: Do not add "TERMINATE" at the end of your message.'
                     if self.language_mode == CONFIG.language_chinese:
-
                         if is_chart:
-                            question_supplement = " 请用中文，详细介绍已生成图表中的数据内容,分析完毕后即结束任务."
+                            question_supplement = ' 请用中文，详细介绍已生成图表中的数据内容,分析完毕后即结束任务. 重要提示：请不要在消息末尾添加"TERMINATE"。'
                         else:
-                            question_supplement = " 请用中文，从上诉对话中分析总结出问题的答案."
+                            question_supplement = ' 请用中文，从上诉对话中分析总结出问题的答案. 重要提示：请不要在消息末尾添加"TERMINATE"。'
                     elif self.language_mode == CONFIG.language_japanese:
                         if is_chart:
-                            question_supplement = " 生成されたグラフのデータ内容について、簡単に日本語で説明してください。"
+                            question_supplement = ' 生成されたグラフのデータ内容について、簡単に日本語で説明してください。重要：メッセージの最後に「TERMINATE」を追加しないでください。'
                         else:
-                            question_supplement = " 上記の対話から問題の答えを分析し、日本語で要約してください。"
+                            question_supplement = ' 上記の対話から問題の答えを分析し、日本語で要約してください。重要：メッセージの最後に「TERMINATE」を追加しないでください。'
 
-                    await planner_user.initiate_chat(
-                        analyst,
-                        message=str(
-                            base_mess) + '\n' + self.question_ask + '\n' + question_supplement,
-                    )
+                    # 构建发送给 Analyst 的消息
+                    message_to_analyst = str(base_mess) + '\n' + self.question_ask + '\n' + question_supplement
 
-                    answer_message = planner_user.last_message()["content"]
+                    # 使用现有的 analyst 实例，不尝试修改其系统消息
+                    # 设置 human_input_mode 为 "NEVER"
+                    planner_user.human_input_mode = "NEVER"
+
+                    # 设置自定义的 is_termination_msg 函数
+                    def custom_is_termination_msg(message_dict):
+                        return False
+
+                    # 保存原始的 is_termination_msg 函数
+                    original_analyst_is_termination_msg = analyst._is_termination_msg
+                    original_planner_is_termination_msg = planner_user._is_termination_msg
+
+                    # 临时设置 is_termination_msg 函数
+                    analyst._is_termination_msg = custom_is_termination_msg
+                    planner_user._is_termination_msg = custom_is_termination_msg
+
+                    try:
+                        # 在消息中添加提示，而不是修改系统消息
+                        message_with_warning = message_to_analyst + "\n\nIMPORTANT: Do not add 'TERMINATE' at the end of your messages. This will cause issues with the system."
+
+                        # 发送消息并获取回复
+                        await planner_user.send(message_with_warning, analyst, request_reply=True)
+
+                        # 获取回复消息
+                        # 检查是否有 last_message 方法
+                        if hasattr(planner_user, 'last_message') and callable(getattr(planner_user, 'last_message')):
+                            last_message = planner_user.last_message(analyst)
+                        else:
+                            # 如果没有 last_message 方法，尝试从 chat_messages 获取
+                            if hasattr(planner_user, 'chat_messages') and analyst in planner_user.chat_messages:
+                                messages = planner_user.chat_messages[analyst]
+                                last_message = messages[-1] if messages else None
+                            else:
+                                last_message = None
+                    finally:
+                        # 恢复原始的 is_termination_msg 函数
+                        analyst._is_termination_msg = original_analyst_is_termination_msg
+                        planner_user._is_termination_msg = original_planner_is_termination_msg
+
+                    # 提取回复内容
+                    if last_message is not None:
+                        if isinstance(last_message, dict) and "content" in last_message:
+                            answer_message = last_message["content"]
+                        else:
+                            answer_message = str(last_message)
+                    else:
+                        # 如果无法获取回复，返回一个默认消息
+                        answer_message = "无法获取分析结果，请查看图表数据。"
+
+                    # Remove "TERMINATE" from the answer message
+                    answer_message = answer_message.replace("TERMINATE", "")
                     return answer_message
 
                 except Exception as e:

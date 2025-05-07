@@ -16,6 +16,17 @@ server_socket() {
 server_api() {
   echo "Starting ai web-api server.."
 
+  # Load environment variables from .env file
+  if [ -f /app/.env ]; then
+    echo "Loading Azure OpenAI environment variables from .env file..."
+    export AZURE_OPENAI_API_KEY=$(grep AZURE_OPENAI_API_KEY /app/.env | cut -d '=' -f2)
+    export AZURE_OPENAI_API_BASE=$(grep AZURE_OPENAI_API_BASE /app/.env | cut -d '=' -f2)
+    export AZURE_DEPLOYMENT=$(grep AZURE_DEPLOYMENT /app/.env | cut -d '=' -f2)
+    echo "AZURE_OPENAI_API_KEY: $AZURE_OPENAI_API_KEY"
+    echo "AZURE_OPENAI_API_BASE: $AZURE_OPENAI_API_BASE"
+    echo "AZURE_DEPLOYMENT: $AZURE_DEPLOYMENT"
+  fi
+
   exec /app/manage.py run_ai_api
 }
 
