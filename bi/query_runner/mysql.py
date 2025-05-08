@@ -125,36 +125,45 @@ class Mysql(BaseSQLQueryRunner):
 
         return connection
 
+
     def _get_tables(self, schema):
-        query = """
-        SELECT col.table_schema as table_schema,
-               col.table_name as table_name,
-               col.column_name as column_name,
-               col.column_comment as column_comment
-        FROM `information_schema`.`columns` col
-        WHERE col.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
         """
+        Retrieve schema information using SHOW TABLES and SHOW COLUMNS
+        instead of querying information_schema.
+        """
+        try:
+            connection = self._connection()
+            cursor = connection.cursor()
 
-        results, error = self.run_query(query, None)
+            # Get list of tables
+            cursor.execute("SHOW TABLES")
+            tables = [row[0] for row in cursor.fetchall()]
 
-        if error is not None:
-            self._handle_run_query_error(error)
+            # Get columns for each table
+            for table_name in tables:
+                if table_name not in schema:
+                    schema[table_name] = {"name": table_name, "columns": [], 'comment': []}
 
-        results = json_loads(results)
+                try:
+                    cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
+                    columns = [row[0] for row in cursor.fetchall()]
 
-        for row in results["rows"]:
-            if row["table_schema"] != self.configuration["db"]:
-                table_name = "{}.{}".format(row["table_schema"], row["table_name"])
-            else:
-                table_name = row["table_name"]
+                    for column in columns:
+                        schema[table_name]["columns"].append(column)
+                        # Since we can't easily get column comments with SHOW COLUMNS,
+                        # we'll just use empty strings
+                        schema[table_name]["comment"].append("")
+                except Exception as e:
+                    logger.error(f"Error getting columns for table {table_name}: {str(e)}")
 
-            if table_name not in schema:
-                schema[table_name] = {"name": table_name, "columns": [], 'comment': []}
+            cursor.close()
+            connection.close()
 
-            schema[table_name]["columns"].append(row["column_name"])
-            schema[table_name]["comment"].append(row["column_comment"])
+        except Exception as e:
+            logger.error(f"Error in _get_tables: {str(e)}")
 
         return list(schema.values())
+
 
     def run_query(self, query, user):
         ev = threading.Event()
